@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { NavLink, Route, Routes, useSearchParams } from 'react-router-dom';
 import { DEFAULT_SETTINGS, computeGroupStandings, generateTournament, validateGameScore } from './lib/tournament';
 import { useLocalStorage } from './lib/localStorage';
 import type { Match, Player, TournamentData } from './types';
@@ -47,7 +47,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LiveDashboard tournament={tournament} />} />
         <Route path="/rankings" element={<RankingsPage tournament={tournament} />} />
-        <Route path="/matches" element={<MatchesPage tournament={tournament} />} />
+        <Route path="/matches" element={<MatchesPage tournament={tournament} adminLoggedIn={adminLoggedIn} />} />
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/admin" element={<AdminPage tournament={tournament} setTournament={setTournament} adminLoggedIn={adminLoggedIn} setAdminLoggedIn={setAdminLoggedIn} />} />
       </Routes>
@@ -177,7 +177,7 @@ function RankingsPage({ tournament }: { tournament: TournamentData }) {
   );
 }
 
-function MatchesPage({ tournament }: { tournament: TournamentData }) {
+function MatchesPage({ tournament, adminLoggedIn }: { tournament: TournamentData; adminLoggedIn: boolean }) {
   const playerMap = new Map(tournament.players.map((player) => [player.id, player.name]));
   const matches = [...tournament.matches].sort((a, b) => {
     const aCompleted = a.status === 'Completed';
@@ -205,11 +205,12 @@ function MatchesPage({ tournament }: { tournament: TournamentData }) {
               <th>Game 3</th>
               <th>Table</th>
               <th>Status</th>
+              {adminLoggedIn && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
             {matches.length === 0 ? (
-              <tr><td colSpan={6} className="note">No matches scheduled yet.</td></tr>
+              <tr><td colSpan={adminLoggedIn ? 7 : 6} className="note">No matches scheduled yet.</td></tr>
             ) : matches.map((match) => (
               <tr key={match.id}>
                 <td>
@@ -221,6 +222,11 @@ function MatchesPage({ tournament }: { tournament: TournamentData }) {
                 <td>{scoreForGame(match, 3)}</td>
                 <td>{match.tableNumber ?? 'TBD'}</td>
                 <td>{match.status}</td>
+                {adminLoggedIn && (
+                  <td>
+                    {match.status === 'Completed' && <NavLink className="table-action" to={`/admin?edit=${encodeURIComponent(match.id)}`}>Edit result</NavLink>}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -260,11 +266,17 @@ function RulesPage() {
 }
 
 function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn }: { tournament: TournamentData; setTournament: (value: TournamentData | ((current: TournamentData) => TournamentData)) => void; adminLoggedIn: boolean; setAdminLoggedIn: (value: boolean) => void; }) {
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('admin@hyack.example');
   const [password, setPassword] = useState('');
   const [playerName, setPlayerName] = useState('');
-  const [selectedMatchId, setSelectedMatchId] = useState(tournament.matches[0]?.id ?? '');
-  const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(blankGameScores);
+  const initialMatchId = searchParams.get('edit') ?? tournament.matches[0]?.id ?? '';
+  const initialMatch = tournament.matches.find((match) => match.id === initialMatchId);
+  const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
+  const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(initialMatch?.scores?.map((score) => ({
+    player1: score.player1Score,
+    player2: score.player2Score,
+  })) ?? blankGameScores);
   const [scoreMessage, setScoreMessage] = useState('');
 
   const handleLogin = (event: React.FormEvent) => {
