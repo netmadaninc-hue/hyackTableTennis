@@ -1,5 +1,7 @@
 import type { Group, Match, MatchStatus, Player, Stage, StandingsEntry, TournamentData } from '../types';
 
+export type GroupStandingsMap = Record<string, StandingsEntry[]>;
+
 export const DEFAULT_SETTINGS = {
   name: 'Hyack Table Tennis Open',
   startTime: '2026-08-22T16:15:00',
@@ -21,47 +23,19 @@ export function shuffle<T>(items: T[]): T[] {
 
 export function buildGroups(players: Player[]): Group[] {
   const shuffled = shuffle(players);
-  const count = shuffled.length;
-  const targetGroupSizes = [4, 4, 4, 3];
-  const groupCount = Math.min(4, Math.ceil(count / 3));
-  const groups: Group[] = [];
+  const groupCount = 3;
+  const groups: Group[] = Array.from({ length: groupCount }, (_, index) => ({
+    id: `group-${index + 1}`,
+    name: `Group ${index + 1}`,
+    tournamentId: 'demo',
+    playerIds: [],
+  }));
 
-  for (let i = 0; i < groupCount; i += 1) {
-    const groupPlayers = shuffled.slice(
-      i * Math.ceil(count / groupCount),
-      (i + 1) * Math.ceil(count / groupCount),
-    );
+  shuffled.forEach((player, index) => {
+    groups[index % groupCount].playerIds.push(player.id);
+  });
 
-    groups.push({
-      id: `group-${i + 1}`,
-      name: `Group ${i + 1}`,
-      tournamentId: 'demo',
-      playerIds: groupPlayers.map((player) => player.id),
-    });
-  }
-
-  if (count <= 15) {
-    const normalized = (() => {
-      const sizes = [0, 0, 0, 0];
-      let index = 0;
-      for (const player of shuffled) {
-        sizes[index % 4] += 1;
-        index += 1;
-      }
-      return sizes;
-    })();
-
-    for (let i = 0; i < groups.length; i += 1) {
-      groups[i].playerIds = shuffled
-        .filter((_, playerIndex) => playerIndex % groups.length === i)
-        .map((player) => player.id);
-      if (normalized[i] === 0) {
-        groups[i].playerIds = [];
-      }
-    }
-  }
-
-  return groups.filter((group) => group.playerIds.length > 0);
+  return groups;
 }
 
 export function roundRobinMatches(group: Group, players: Player[], stage: Stage = 'Group'): Match[] {
@@ -93,9 +67,20 @@ export function generateTournament(players: Player[]): TournamentData {
   const groups = buildGroups(safePlayers);
   const matches: Match[] = [];
 
-  groups.forEach((group) => {
+  const groupTableMap: Record<string, number> = {};
+  groups.forEach((group, index) => {
+    groupTableMap[group.id] = index + 1;
     const groupMatches = roundRobinMatches(group, safePlayers, 'Group');
+    groupMatches.forEach((match) => {
+      match.tableNumber = groupTableMap[group.id];
+      match.status = 'Upcoming';
+    });
     matches.push(...groupMatches);
+  });
+
+  const firstMatches = matches.filter((_, index) => index < groups.length);
+  firstMatches.forEach((match) => {
+    match.status = 'Ready';
   });
 
   return {
@@ -116,6 +101,88 @@ export function validateGameScore(scoreA: number, scoreB: number): boolean {
   return maxScore - minScore >= 2;
 }
 
+export function computeGroupStandings(matches: Match[], players: Player[], groups: Group[]): GroupStandingsMap {
+  const playerMap = new Map(players.map((player) => [player.id, player]));
+  const standingsByGroup: GroupStandingsMap = {};
+
+  groups.forEach((group) => {
+    const stats = new Map<string, StandingsEntry>();
+
+    group.playerIds.forEach((playerId) => {
+      const player = playerMap.get(playerId);
+      if (!player) return;
+
+      stats.set(player.id, {
+        playerId: player.id,
+        playerName: player.name,
+        played: 0,
+        won: 0,
+        lost: 0,
+        gamesWon: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        gameDifference: 0,
+        pointDifference: 0,
+        qualificationStatus: 'Still competing',
+      });
+    });
+
+    matches.forEach((match) => {
+      if (match.groupId !== group.id || match.status !== 'Completed' || !match.winnerId) return;
+      const p1 = stats.get(match.player1Id ?? '');
+      const p2 = stats.get(match.player2Id ?? '');
+      if (!p1 || !p2) return;
+
+      const winner = match.winnerId === match.player1Id ? p1 : p2;
+      const loser = match.winnerId === match.player1Id ? p2 : p1;
+      winner.played += 1;
+      winner.won += 1;
+      loser.played += 1;
+      loser.lost += 1;
+
+      const scores = match.scores ?? [];
+      scores.forEach((score) => {
+        const p1Score = score.player1Score;
+        const p2Score = score.player2Score;
+
+        if (p1Score > p2Score) {
+          p1.gamesWon += 1;
+          p1.pointsFor += p1Score;
+          p1.pointsAgainst += p2Score;
+          p1.pointDifference += p1Score - p2Score;
+          p1.gameDifference += 1;
+
+          p2.gamesWon += 0;
+          p2.pointsFor += p2Score;
+          p2.pointsAgainst += p1Score;
+          p2.pointDifference += p2Score - p1Score;
+          p2.gameDifference -= 1;
+        } else {
+          p2.gamesWon += 1;
+          p2.pointsFor += p2Score;
+          p2.pointsAgainst += p1Score;
+          p2.pointDifference += p2Score - p1Score;
+          p2.gameDifference += 1;
+
+          p1.pointsFor += p1Score;
+          p1.pointsAgainst += p2Score;
+          p1.pointDifference += p1Score - p2Score;
+          p1.gameDifference -= 1;
+        }
+      });
+    });
+
+    standingsByGroup[group.id] = Array.from(stats.values()).sort((a, b) => {
+      if (b.won !== a.won) return b.won - a.won;
+      if (a.lost !== b.lost) return a.lost - b.lost;
+      if (b.gameDifference !== a.gameDifference) return b.gameDifference - a.gameDifference;
+      return b.pointDifference - a.pointDifference;
+    });
+  });
+
+  return standingsByGroup;
+}
+
 export function calculateStandings(matches: Match[], players: Player[]): StandingsEntry[] {
   const stats = new Map<string, StandingsEntry>();
 
@@ -126,6 +193,9 @@ export function calculateStandings(matches: Match[], players: Player[]): Standin
       played: 0,
       won: 0,
       lost: 0,
+      gamesWon: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
       gameDifference: 0,
       pointDifference: 0,
       qualificationStatus: 'Still competing',
@@ -153,11 +223,22 @@ export function calculateStandings(matches: Match[], players: Player[]): Standin
       const p2Won = p2 > p1;
 
       if (p1Won) {
+        player1.gamesWon += 1;
+        player1.pointsFor += p1;
+        player1.pointsAgainst += p2;
         player1.gameDifference += 1;
+        player2.gamesWon += 0;
+        player2.pointsFor += p2;
+        player2.pointsAgainst += p1;
         player2.gameDifference -= 1;
       }
       if (p2Won) {
+        player2.gamesWon += 1;
+        player2.pointsFor += p2;
+        player2.pointsAgainst += p1;
         player2.gameDifference += 1;
+        player1.pointsFor += p1;
+        player1.pointsAgainst += p2;
         player1.gameDifference -= 1;
       }
 

@@ -1,21 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { createDemoTournament, generateTournament, calculateStandings, validateGameScore } from './lib/tournament';
+import { DEFAULT_SETTINGS, computeGroupStandings, generateTournament, validateGameScore } from './lib/tournament';
 import { useLocalStorage } from './lib/localStorage';
 import type { Match, Player, TournamentData } from './types';
 
 const STORAGE_KEY = 'hyack-table-tennis-data';
-const PLAYER_KEY = 'hyack-table-tennis-player';
 const AUTH_KEY = 'hyack-table-tennis-admin';
 
-const demoTournament = createDemoTournament();
+const emptyTournament: TournamentData = {
+  settings: { ...DEFAULT_SETTINGS },
+  players: [],
+  groups: [],
+  matches: [],
+};
 
 function App() {
-  const [tournament, setTournament] = useLocalStorage<TournamentData>(STORAGE_KEY, demoTournament);
-  const [selectedPlayerId, setSelectedPlayerId] = useLocalStorage<string | null>(PLAYER_KEY, demoTournament.players[0]?.id ?? null);
+  const [tournament, setTournament] = useLocalStorage<TournamentData>(STORAGE_KEY, emptyTournament);
   const [adminLoggedIn, setAdminLoggedIn] = useLocalStorage<boolean>(AUTH_KEY, false);
-
-  const selectedPlayer = tournament.players.find((player) => player.id === selectedPlayerId) ?? tournament.players[0] ?? null;
 
   return (
     <div className="app-shell">
@@ -31,7 +32,6 @@ function App() {
 
       <nav className="nav-bar" aria-label="Primary navigation">
         <NavLink to="/" end>Live</NavLink>
-        <NavLink to="/find-match">Find Match</NavLink>
         <NavLink to="/rankings">Standings</NavLink>
         <NavLink to="/bracket">Bracket</NavLink>
         <NavLink to="/rules">Rules</NavLink>
@@ -40,7 +40,6 @@ function App() {
 
       <Routes>
         <Route path="/" element={<LiveDashboard tournament={tournament} />} />
-        <Route path="/find-match" element={<FindMatchPage tournament={tournament} selectedPlayerId={selectedPlayerId} onSelect={setSelectedPlayerId} />} />
         <Route path="/rankings" element={<RankingsPage tournament={tournament} />} />
         <Route path="/bracket" element={<BracketPage tournament={tournament} />} />
         <Route path="/rules" element={<RulesPage />} />
@@ -57,9 +56,20 @@ function App() {
 }
 
 function LiveDashboard({ tournament }: { tournament: TournamentData }) {
-  const currentMatches = tournament.matches.filter((match) => match.status === 'In Progress' || match.status === 'Ready');
-  const nextMatches = tournament.matches.filter((match) => match.status === 'Upcoming').slice(0, 4);
+  const currentMatches = tournament.matches
+    .filter((match) => match.status === 'In Progress' || match.status === 'Ready')
+    .sort((a, b) => (a.tableNumber ?? 99) - (b.tableNumber ?? 99));
+  const nextMatches = tournament.matches
+    .filter((match) => match.status === 'Upcoming')
+    .sort((a, b) => (a.tableNumber ?? 99) - (b.tableNumber ?? 99))
+    .slice(0, 4);
   const playerMap = new Map(tournament.players.map((player) => [player.id, player.name]));
+
+  const resolveTableNumber = (tableNumber: number | undefined, fallbackIndex: number) => {
+    const maxTable = tournament.settings.tables;
+    const normalized = tableNumber && tableNumber > 0 ? tableNumber : fallbackIndex + 1;
+    return Math.min(Math.max(normalized, 1), maxTable);
+  };
 
   return (
     <main className="page">
@@ -105,7 +115,7 @@ function LiveDashboard({ tournament }: { tournament: TournamentData }) {
                 <span> vs </span>
                 <strong>{playerMap.get(match.player2Id ?? '') ?? 'TBD'}</strong>
               </div>
-              <small>Table {match.tableNumber ?? index + 1} • Queue {match.queueOrder}</small>
+              <small>Table {resolveTableNumber(match.tableNumber, index)} • Queue {match.queueOrder}</small>
             </article>
           ))}
         </div>
@@ -114,69 +124,48 @@ function LiveDashboard({ tournament }: { tournament: TournamentData }) {
   );
 }
 
-function FindMatchPage({ tournament, selectedPlayerId, onSelect }: { tournament: TournamentData; selectedPlayerId: string | null; onSelect: (id: string) => void; }) {
-  const [query, setQuery] = useState('');
-  const filteredPlayers = tournament.players.filter((player) => player.name.toLowerCase().includes(query.toLowerCase()));
-  const selectedPlayer = tournament.players.find((player) => player.id === selectedPlayerId) ?? tournament.players[0] ?? null;
-  const playerMap = new Map(tournament.players.map((player) => [player.id, player.name]));
-  const nextMatch = tournament.matches.find((match) => match.player1Id === selectedPlayer?.id || match.player2Id === selectedPlayer?.id) ?? null;
-  const standings = useMemo(() => calculateStandings(tournament.matches, tournament.players), [tournament]);
-  const ranking = standings.find((entry) => entry.playerId === selectedPlayer?.id);
-
-  return (
-    <main className="page">
-      <h3>Find your match</h3>
-      <div className="search-box">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search player name" />
-      </div>
-      <div className="chip-list">
-        {filteredPlayers.map((player) => (
-          <button key={player.id} className={player.id === selectedPlayer?.id ? 'chip active' : 'chip'} onClick={() => onSelect(player.id)}>
-            {player.name}
-          </button>
-        ))}
-      </div>
-
-      {selectedPlayer && (
-        <section className="hero-card">
-          <p className="eyebrow">Your tournament</p>
-          <h2>{selectedPlayer.name}</h2>
-          <div className="match-panel">
-            <strong>🏓 {nextMatch ? `${playerMap.get(nextMatch.player1Id ?? '') ?? 'TBD'} vs ${playerMap.get(nextMatch.player2Id ?? '') ?? 'TBD'}` : 'No match scheduled yet'}</strong>
-            <small>📍 Table {nextMatch?.tableNumber ?? 'TBD'} • ⏳ {nextMatch?.status ?? 'Waiting'}</small>
-          </div>
-          <div className="stats-grid">
-            <div><span>Group</span><strong>–</strong></div>
-            <div><span>Rank</span><strong>{ranking ? `${standings.findIndex((entry) => entry.playerId === selectedPlayer.id) + 1}` : '–'}</strong></div>
-            <div><span>Wins</span><strong>{ranking?.won ?? 0}</strong></div>
-            <div><span>Losses</span><strong>{ranking?.lost ?? 0}</strong></div>
-          </div>
-        </section>
-      )}
-    </main>
-  );
-}
-
 function RankingsPage({ tournament }: { tournament: TournamentData }) {
-  const standings = calculateStandings(tournament.matches, tournament.players);
+  const standingsByGroup = computeGroupStandings(tournament.matches, tournament.players, tournament.groups);
 
   return (
     <main className="page">
-      <h3>Groups and rankings</h3>
-      <div className="standings-list">
-        {standings.map((entry, index) => (
-          <article key={entry.playerId} className="standing-card">
-            <div className="rank-badge">#{index + 1}</div>
-            <div>
-              <strong>{entry.playerName}</strong>
-              <small>W {entry.won} • L {entry.lost}</small>
-            </div>
-            <div className="score-mini">
-              <span>Games: {entry.gameDifference > 0 ? `+${entry.gameDifference}` : entry.gameDifference}</span>
-              <span>Points: {entry.pointDifference > 0 ? `+${entry.pointDifference}` : entry.pointDifference}</span>
-            </div>
-          </article>
-        ))}
+      <h3>Group standings</h3>
+      <div className="group-standings-wrapper">
+        {tournament.groups.map((group) => {
+          const entries = standingsByGroup[group.id] ?? [];
+          return (
+            <section key={group.id} className="group-panel">
+              <div className="group-header">
+                <h4>{group.name}</h4>
+                <div className="group-members">
+                  {group.playerIds.map((playerId) => (
+                    <span key={playerId} className="member-pill">
+                      {tournament.players.find((player) => player.id === playerId)?.name ?? 'Unknown'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="standings-list">
+                {entries.length === 0 ? (
+                  <p className="note">No results yet.</p>
+                ) : entries.map((entry, index) => (
+                  <article key={entry.playerId} className="standing-card">
+                    <div className="rank-badge">#{index + 1}</div>
+                    <div className="standing-main">
+                      <strong>{entry.playerName}</strong>
+                      <small>P {entry.played} • W {entry.won} • L {entry.lost}</small>
+                    </div>
+                    <div className="score-mini">
+                      <span>Games won: {entry.gamesWon}</span>
+                      <span>Points: {entry.pointsFor} - {entry.pointsAgainst}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </main>
   );
@@ -245,7 +234,11 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   const [password, setPassword] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState(tournament.matches[0]?.id ?? '');
-  const [scores, setScores] = useState({ p1: 11, p2: 7 });
+  const [gameScores, setGameScores] = useState<Array<{ player1: number; player2: number }>>([
+    { player1: 11, player2: 7 },
+    { player1: 9, player2: 11 },
+    { player1: 11, player2: 8 },
+  ]);
 
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
@@ -269,19 +262,60 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   };
 
   const randomizeTournament = () => {
-    if (tournament.players.length < 4) return;
+    if (tournament.players.length === 0) return;
     const next = generateTournament(tournament.players);
     setTournament({ ...next, settings: { ...tournament.settings } });
   };
 
+  const startTournament = () => {
+    const startedMatches: Match[] = tournament.matches.map((match, index) => ({
+      ...match,
+      status: index < tournament.settings.tables ? 'Ready' : 'Upcoming',
+    }));
+    setTournament((current) => ({ ...current, matches: startedMatches }));
+  };
+
+  const clearAllData = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setTournament({
+      settings: { ...DEFAULT_SETTINGS },
+      players: [],
+      groups: [],
+      matches: [],
+    });
+    setSelectedMatchId('');
+  };
+
+  const logout = () => {
+    setAdminLoggedIn(false);
+  };
+
   const saveScore = () => {
     const match = tournament.matches.find((item) => item.id === selectedMatchId);
-    if (!match) return;
-    if (!validateGameScore(scores.p1, scores.p2)) return;
-    const winnerId = scores.p1 > scores.p2 ? match.player1Id : match.player2Id;
+    if (!match || !match.player1Id || !match.player2Id) return;
+
+    const valid = gameScores.every((game) => validateGameScore(game.player1, game.player2) || validateGameScore(game.player2, game.player1));
+    if (!valid) return;
+
+    const p1Wins = gameScores.filter((game) => game.player1 > game.player2).length;
+    const p2Wins = gameScores.filter((game) => game.player2 > game.player1).length;
+    const winnerId = p1Wins > p2Wins ? match.player1Id : match.player2Id;
+
     const updated: Match[] = tournament.matches.map((item): Match => item.id === match.id
-      ? { ...item, status: 'Completed', winnerId, updatedAt: new Date().toISOString() }
+      ? {
+          ...item,
+          status: 'Completed',
+          winnerId,
+          updatedAt: new Date().toISOString(),
+          scores: gameScores.map((game, index) => ({
+            matchId: item.id,
+            gameNumber: index + 1,
+            player1Score: game.player1,
+            player2Score: game.player2,
+          })),
+        }
       : item);
+
     setTournament((current) => ({ ...current, matches: updated }));
   };
 
@@ -312,9 +346,10 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
         <div className="card">
           <h4>Tournament</h4>
           <div className="button-row">
-            <button>Start</button>
-            <button>Pause</button>
-            <button>Reset</button>
+            <button onClick={startTournament}>Start tournament</button>
+            <button onClick={() => setTournament((current) => ({ ...current, matches: current.matches.map((match) => ({ ...match, status: 'Upcoming' })) }))}>Pause</button>
+            <button onClick={clearAllData}>Clear all data</button>
+            <button onClick={logout}>Logout</button>
           </div>
         </div>
 
@@ -346,18 +381,63 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
       </section>
 
       <section className="card">
+        <h4>Schedule</h4>
+        <div className="schedule-list">
+          {tournament.matches.length === 0 ? (
+            <p className="note">No tournament scheduled yet.</p>
+          ) : tournament.matches.map((match) => {
+            const p1 = match.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'TBD' : 'TBD';
+            const p2 = match.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'TBD' : 'TBD';
+            return (
+              <div key={match.id} className="schedule-item">
+                <strong>{p1} vs {p2}</strong>
+                <small>{match.groupId ? `Group ${match.groupId.replace('group-', '')}` : 'Group'} • Table {match.tableNumber ?? 'TBD'} • {match.status}</small>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="card">
         <h4>Quick score entry</h4>
         <select value={selectedMatchId} onChange={(event) => setSelectedMatchId(event.target.value)}>
-          {tournament.matches.map((match) => (
-            <option key={match.id} value={match.id}>{match.player1Id && match.player2Id ? `${match.player1Id} vs ${match.player2Id}` : 'TBD'}</option>
-          ))}
+          {tournament.matches.map((match) => {
+            const p1 = match.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'TBD' : 'TBD';
+            const p2 = match.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'TBD' : 'TBD';
+            return <option key={match.id} value={match.id}>{p1} vs {p2}</option>;
+          })}
         </select>
-        <div className="score-inline">
-          <input type="number" value={scores.p1} onChange={(e) => setScores({ ...scores, p1: Number(e.target.value) })} />
-          <span>–</span>
-          <input type="number" value={scores.p2} onChange={(e) => setScores({ ...scores, p2: Number(e.target.value) })} />
-        </div>
-        <button onClick={saveScore}>Save result</button>
+
+        {(() => {
+          const match = tournament.matches.find((item) => item.id === selectedMatchId);
+          const p1Name = match?.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'Player 1' : 'Player 1';
+          const p2Name = match?.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'Player 2' : 'Player 2';
+
+          return (
+            <>
+              <div className="match-score-header">
+                <strong>{p1Name} vs {p2Name}</strong>
+                <small>Best of 3 games</small>
+              </div>
+
+              {gameScores.map((game, index) => (
+                <div key={index} className="game-score-row">
+                  <span>Game {index + 1}</span>
+                  <div className="score-inline compact">
+                    <label>{p1Name}</label>
+                    <input type="number" min="0" value={game.player1} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player1: Number(event.target.value) } : entry))} />
+                    <span>:</span>
+                    <input type="number" min="0" value={game.player2} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player2: Number(event.target.value) } : entry))} />
+                    <label>{p2Name}</label>
+                  </div>
+                </div>
+              ))}
+
+              <p className="note">Format: 11-8 / 9-11 / 11-7</p>
+              <button onClick={saveScore}>Save result</button>
+            </>
+          );
+        })()}
       </section>
     </main>
   );

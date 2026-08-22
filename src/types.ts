@@ -58,6 +58,9 @@ export interface StandingsEntry {
   played: number;
   won: number;
   lost: number;
+  gamesWon: number;
+  pointsFor: number;
+  pointsAgainst: number;
   gameDifference: number;
   pointDifference: number;
   qualificationStatus: 'Qualified' | 'Still competing' | 'Eliminated' | 'Waiting';
