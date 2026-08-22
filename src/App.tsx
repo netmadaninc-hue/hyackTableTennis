@@ -488,7 +488,10 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
       <section className="card">
         <h4>Quick score entry</h4>
         <select value={selectedMatchId} onChange={(event) => selectMatch(event.target.value)}>
-          {tournament.matches.map((match) => {
+          {tournament.matches.find((match) => match.id === selectedMatchId)?.status === 'Completed' && (
+            <option value={selectedMatchId}>Editing completed match</option>
+          )}
+          {tournament.matches.filter((match) => match.status !== 'Completed').map((match) => {
             const p1 = match.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'TBD' : 'TBD';
             const p2 = match.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'TBD' : 'TBD';
             return <option key={match.id} value={match.id}>{p1} vs {p2} • {match.status}</option>;
