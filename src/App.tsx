@@ -20,6 +20,13 @@ const blankGameScores: Array<{ player1: number | ''; player2: number | '' }> = [
   { player1: '', player2: '' },
 ];
 
+const formScoresForMatch = (match?: Match): Array<{ player1: number | ''; player2: number | '' }> => Array.from({ length: 3 }, (_, index) => {
+  const score = match?.scores?.find((game) => game.gameNumber === index + 1);
+  return score
+    ? { player1: score.player1Score, player2: score.player2Score }
+    : { player1: '', player2: '' };
+});
+
 function App() {
   const [tournament, setTournament] = useLocalStorage<TournamentData>(STORAGE_KEY, emptyTournament);
   const [adminLoggedIn, setAdminLoggedIn] = useLocalStorage<boolean>(AUTH_KEY, false);
@@ -273,10 +280,7 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   const initialMatchId = searchParams.get('edit') ?? tournament.matches[0]?.id ?? '';
   const initialMatch = tournament.matches.find((match) => match.id === initialMatchId);
   const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
-  const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(initialMatch?.scores?.map((score) => ({
-    player1: score.player1Score,
-    player2: score.player2Score,
-  })) ?? blankGameScores);
+  const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(formScoresForMatch(initialMatch));
   const [scoreMessage, setScoreMessage] = useState('');
 
   const handleLogin = (event: React.FormEvent) => {
@@ -338,10 +342,7 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
     const match = tournament.matches.find((item) => item.id === matchId);
     setSelectedMatchId(matchId);
     setScoreMessage('');
-    setGameScores(match?.scores?.map((score) => ({
-      player1: score.player1Score,
-      player2: score.player2Score,
-    })) ?? blankGameScores);
+    setGameScores(formScoresForMatch(match));
   };
 
   const saveScore = () => {
