@@ -14,6 +14,12 @@ const emptyTournament: TournamentData = {
   matches: [],
 };
 
+const blankGameScores: Array<{ player1: number | ''; player2: number | '' }> = [
+  { player1: '', player2: '' },
+  { player1: '', player2: '' },
+  { player1: '', player2: '' },
+];
+
 function App() {
   const [tournament, setTournament] = useLocalStorage<TournamentData>(STORAGE_KEY, emptyTournament);
   const [adminLoggedIn, setAdminLoggedIn] = useLocalStorage<boolean>(AUTH_KEY, false);
@@ -234,11 +240,8 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   const [password, setPassword] = useState('');
   const [playerName, setPlayerName] = useState('');
   const [selectedMatchId, setSelectedMatchId] = useState(tournament.matches[0]?.id ?? '');
-  const [gameScores, setGameScores] = useState<Array<{ player1: number; player2: number }>>([
-    { player1: 11, player2: 7 },
-    { player1: 9, player2: 11 },
-    { player1: 11, player2: 8 },
-  ]);
+  const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(blankGameScores);
+  const [scoreMessage, setScoreMessage] = useState('');
 
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
@@ -268,9 +271,14 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   };
 
   const startTournament = () => {
+    const readyMatchIds = new Set<number>();
+    for (let tableNumber = 1; tableNumber <= tournament.settings.tables; tableNumber += 1) {
+      const firstMatch = tournament.matches.find((match) => match.tableNumber === tableNumber);
+      if (firstMatch) readyMatchIds.add(tournament.matches.indexOf(firstMatch));
+    }
     const startedMatches: Match[] = tournament.matches.map((match, index) => ({
       ...match,
-      status: index < tournament.settings.tables ? 'Ready' : 'Upcoming',
+      status: readyMatchIds.has(index) ? 'Ready' : 'Upcoming',
     }));
     setTournament((current) => ({ ...current, matches: startedMatches }));
   };
@@ -290,19 +298,43 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
     setAdminLoggedIn(false);
   };
 
+  const selectMatch = (matchId: string) => {
+    const match = tournament.matches.find((item) => item.id === matchId);
+    setSelectedMatchId(matchId);
+    setScoreMessage('');
+    setGameScores(match?.scores?.map((score) => ({
+      player1: score.player1Score,
+      player2: score.player2Score,
+    })) ?? blankGameScores);
+  };
+
   const saveScore = () => {
     const match = tournament.matches.find((item) => item.id === selectedMatchId);
-    if (!match || !match.player1Id || !match.player2Id) return;
+    if (!match || !match.player1Id || !match.player2Id) {
+      setScoreMessage('Select a scheduled match first.');
+      return;
+    }
 
-    const valid = gameScores.every((game) => validateGameScore(game.player1, game.player2) || validateGameScore(game.player2, game.player1));
-    if (!valid) return;
+    const valid = gameScores.every((game) => (
+      typeof game.player1 === 'number'
+      && typeof game.player2 === 'number'
+      && (validateGameScore(game.player1, game.player2) || validateGameScore(game.player2, game.player1))
+    ));
+    if (!valid) {
+      setScoreMessage('Enter valid scores: first to 11, win by 2.');
+      return;
+    }
 
-    const p1Wins = gameScores.filter((game) => game.player1 > game.player2).length;
-    const p2Wins = gameScores.filter((game) => game.player2 > game.player1).length;
+    const p1Wins = gameScores.filter((game) => Number(game.player1) > Number(game.player2)).length;
+    const p2Wins = gameScores.filter((game) => Number(game.player2) > Number(game.player1)).length;
     const winnerId = p1Wins > p2Wins ? match.player1Id : match.player2Id;
 
-    const updated: Match[] = tournament.matches.map((item): Match => item.id === match.id
-      ? {
+    const nextMatch = tournament.matches
+      .filter((item) => item.tableNumber === match.tableNumber && item.status === 'Upcoming' && item.id !== match.id)
+      .sort((a, b) => a.queueOrder - b.queueOrder)[0];
+    const updated: Match[] = tournament.matches.map((item): Match => {
+      if (item.id === match.id) {
+        return {
           ...item,
           status: 'Completed',
           winnerId,
@@ -310,13 +342,25 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
           scores: gameScores.map((game, index) => ({
             matchId: item.id,
             gameNumber: index + 1,
-            player1Score: game.player1,
-            player2Score: game.player2,
+            player1Score: Number(game.player1),
+            player2Score: Number(game.player2),
           })),
-        }
-      : item);
+        };
+      }
+      if (!match.status.includes('Completed') && nextMatch && item.id === nextMatch.id) {
+        return { ...item, status: 'Ready' };
+      }
+      return item;
+    });
 
     setTournament((current) => ({ ...current, matches: updated }));
+    setScoreMessage(nextMatch && !match.status.includes('Completed')
+      ? `Result saved. Next match on Table ${match.tableNumber} is ready.`
+      : 'Result saved successfully.');
+    setGameScores(blankGameScores);
+    if (nextMatch && !match.status.includes('Completed')) {
+      setSelectedMatchId(nextMatch.id);
+    }
   };
 
   if (!adminLoggedIn) {
@@ -400,11 +444,11 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
 
       <section className="card">
         <h4>Quick score entry</h4>
-        <select value={selectedMatchId} onChange={(event) => setSelectedMatchId(event.target.value)}>
+        <select value={selectedMatchId} onChange={(event) => selectMatch(event.target.value)}>
           {tournament.matches.map((match) => {
             const p1 = match.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'TBD' : 'TBD';
             const p2 = match.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'TBD' : 'TBD';
-            return <option key={match.id} value={match.id}>{p1} vs {p2}</option>;
+            return <option key={match.id} value={match.id}>{p1} vs {p2} • {match.status}</option>;
           })}
         </select>
 
@@ -425,9 +469,9 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
                   <span>Game {index + 1}</span>
                   <div className="score-inline compact">
                     <label>{p1Name}</label>
-                    <input type="number" min="0" value={game.player1} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player1: Number(event.target.value) } : entry))} />
+                    <input type="number" min="0" value={game.player1} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player1: event.target.value === '' ? '' : Number(event.target.value) } : entry))} />
                     <span>:</span>
-                    <input type="number" min="0" value={game.player2} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player2: Number(event.target.value) } : entry))} />
+                    <input type="number" min="0" value={game.player2} onChange={(event) => setGameScores((current) => current.map((entry, i) => i === index ? { ...entry, player2: event.target.value === '' ? '' : Number(event.target.value) } : entry))} />
                     <label>{p2Name}</label>
                   </div>
                 </div>
@@ -435,9 +479,30 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
 
               <p className="note">Format: 11-8 / 9-11 / 11-7</p>
               <button onClick={saveScore}>Save result</button>
+              {scoreMessage && <p className="success-message" role="status">{scoreMessage}</p>}
             </>
           );
         })()}
+      </section>
+
+      <section className="card">
+        <h4>Completed matches</h4>
+        <div className="schedule-list">
+          {tournament.matches.filter((match) => match.status === 'Completed').length === 0 ? (
+            <p className="note">No completed matches yet.</p>
+          ) : tournament.matches.filter((match) => match.status === 'Completed').map((match) => {
+            const p1 = match.player1Id ? tournament.players.find((player) => player.id === match.player1Id)?.name ?? 'TBD' : 'TBD';
+            const p2 = match.player2Id ? tournament.players.find((player) => player.id === match.player2Id)?.name ?? 'TBD' : 'TBD';
+            const winner = match.winnerId ? tournament.players.find((player) => player.id === match.winnerId)?.name ?? 'Unknown' : 'Unknown';
+            return (
+              <div key={match.id} className="schedule-item">
+                <strong>{p1} vs {p2}</strong>
+                <small>Table {match.tableNumber ?? 'TBD'} • Winner: {winner}</small>
+                <button className="secondary" onClick={() => selectMatch(match.id)}>Edit result</button>
+              </div>
+            );
+          })}
+        </div>
       </section>
     </main>
   );

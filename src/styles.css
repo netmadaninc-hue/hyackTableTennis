@@ -300,6 +300,17 @@ button.secondary { background: rgba(148, 163, 184, 0.2); }
   margin-top: 1rem;
 }
 
+.success-message {
+  color: #86efac;
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+}
+
+.schedule-item {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .footer-bar {
   margin-top: 1.5rem;
   padding-top: 1rem;
