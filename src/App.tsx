@@ -39,7 +39,7 @@ function App() {
       <nav className="nav-bar" aria-label="Primary navigation">
         <NavLink to="/" end>Live</NavLink>
         <NavLink to="/rankings">Standings</NavLink>
-        <NavLink to="/bracket">Bracket</NavLink>
+        <NavLink to="/matches">All matches</NavLink>
         <NavLink to="/rules">Rules</NavLink>
         <NavLink to="/admin">Admin</NavLink>
       </nav>
@@ -47,7 +47,7 @@ function App() {
       <Routes>
         <Route path="/" element={<LiveDashboard tournament={tournament} />} />
         <Route path="/rankings" element={<RankingsPage tournament={tournament} />} />
-        <Route path="/bracket" element={<BracketPage tournament={tournament} />} />
+        <Route path="/matches" element={<MatchesPage tournament={tournament} />} />
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/admin" element={<AdminPage tournament={tournament} setTournament={setTournament} adminLoggedIn={adminLoggedIn} setAdminLoggedIn={setAdminLoggedIn} />} />
       </Routes>
@@ -177,30 +177,54 @@ function RankingsPage({ tournament }: { tournament: TournamentData }) {
   );
 }
 
-function BracketPage({ tournament }: { tournament: TournamentData }) {
+function MatchesPage({ tournament }: { tournament: TournamentData }) {
   const playerMap = new Map(tournament.players.map((player) => [player.id, player.name]));
-  const semifinalEntries = [
-    { id: 'sf1', label: 'Quarterfinal 1', players: [playerMap.get(tournament.players[0]?.id ?? '') ?? 'TBD', playerMap.get(tournament.players[1]?.id ?? '') ?? 'TBD'] },
-    { id: 'sf2', label: 'Quarterfinal 2', players: [playerMap.get(tournament.players[2]?.id ?? '') ?? 'TBD', playerMap.get(tournament.players[3]?.id ?? '') ?? 'TBD'] },
-    { id: 'sf3', label: 'Quarterfinal 3', players: [playerMap.get(tournament.players[4]?.id ?? '') ?? 'TBD', playerMap.get(tournament.players[5]?.id ?? '') ?? 'TBD'] },
-    { id: 'sf4', label: 'Quarterfinal 4', players: [playerMap.get(tournament.players[6]?.id ?? '') ?? 'TBD', playerMap.get(tournament.players[7]?.id ?? '') ?? 'TBD'] },
-  ];
+  const matches = [...tournament.matches].sort((a, b) => {
+    const aCompleted = a.status === 'Completed';
+    const bCompleted = b.status === 'Completed';
+    if (aCompleted !== bCompleted) return aCompleted ? -1 : 1;
+    if (aCompleted && bCompleted) return Date.parse(a.updatedAt) - Date.parse(b.updatedAt);
+    return a.queueOrder - b.queueOrder;
+  });
+
+  const scoreForGame = (match: Match, gameNumber: number) => {
+    const score = match.scores?.find((game) => game.gameNumber === gameNumber);
+    return score ? `${score.player1Score}-${score.player2Score}` : '-';
+  };
 
   return (
     <main className="page">
-      <h3>Knockout bracket</h3>
-      <div className="bracket-list">
-        {semifinalEntries.map((match) => (
-          <article key={match.id} className="match-card">
-            <small>{match.label}</small>
-            <div>{match.players[0]} vs {match.players[1]}</div>
-          </article>
-        ))}
-      </div>
-      <div className="champion-box">
-        <div>🥇 Champion: {playerMap.get(tournament.players[0]?.id ?? '') ?? 'TBD'}</div>
-        <div>🥈 Runner-up: {playerMap.get(tournament.players[1]?.id ?? '') ?? 'TBD'}</div>
-        <div>🥉 Third place: {playerMap.get(tournament.players[2]?.id ?? '') ?? 'TBD'}</div>
+      <h3>All matches</h3>
+      <div className="results-table-wrap">
+        <table className="results-table">
+          <thead>
+            <tr>
+              <th>Match</th>
+              <th>Game 1</th>
+              <th>Game 2</th>
+              <th>Game 3</th>
+              <th>Table</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {matches.length === 0 ? (
+              <tr><td colSpan={6} className="note">No matches scheduled yet.</td></tr>
+            ) : matches.map((match) => (
+              <tr key={match.id}>
+                <td>
+                  <strong>{playerMap.get(match.player1Id ?? '') ?? 'TBD'} vs {playerMap.get(match.player2Id ?? '') ?? 'TBD'}</strong>
+                  <small>{match.groupId ? `Group ${match.groupId.replace('group-', '')}` : 'Group'}</small>
+                </td>
+                <td>{scoreForGame(match, 1)}</td>
+                <td>{scoreForGame(match, 2)}</td>
+                <td>{scoreForGame(match, 3)}</td>
+                <td>{match.tableNumber ?? 'TBD'}</td>
+                <td>{match.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </main>
   );
