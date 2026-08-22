@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/lib/localStorage.ts","./src/lib/tournament.ts"],"version":"5.9.3"}
+{"root":["./src/App.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/lib/localStorage.ts","./src/lib/sharedTournament.ts","./src/lib/supabase.ts","./src/lib/tournament.ts"],"version":"5.9.3"}

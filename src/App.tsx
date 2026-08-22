@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { NavLink, Route, Routes, useSearchParams } from 'react-router-dom';
 import { DEFAULT_SETTINGS, computeGroupStandings, generateTournament, validateGameScore } from './lib/tournament';
 import { useLocalStorage } from './lib/localStorage';
+import { isSupabaseConfigured } from './lib/supabase';
+import { useAdminSession, useSharedTournament } from './lib/sharedTournament';
 import type { Match, Player, TournamentData } from './types';
 
 const STORAGE_KEY = 'hyack-table-tennis-data';
@@ -28,8 +30,14 @@ const formScoresForMatch = (match?: Match): Array<{ player1: number | ''; player
 });
 
 function App() {
-  const [tournament, setTournament] = useLocalStorage<TournamentData>(STORAGE_KEY, emptyTournament);
-  const [adminLoggedIn, setAdminLoggedIn] = useLocalStorage<boolean>(AUTH_KEY, false);
+  const { session, loading: authLoading, signIn, signOut } = useAdminSession();
+  const [localAdminLoggedIn, setLocalAdminLoggedIn] = useLocalStorage<boolean>(AUTH_KEY, false);
+  const [tournament, setTournament, tournamentLoaded] = useSharedTournament(emptyTournament, session?.user.id);
+  const adminLoggedIn = isSupabaseConfigured ? Boolean(session) : localAdminLoggedIn;
+
+  if (!tournamentLoaded || authLoading) {
+    return <main className="page"><p className="note">Loading tournament...</p></main>;
+  }
 
   return (
     <div className="app-shell">
@@ -56,7 +64,14 @@ function App() {
         <Route path="/rankings" element={<RankingsPage tournament={tournament} />} />
         <Route path="/matches" element={<MatchesPage tournament={tournament} adminLoggedIn={adminLoggedIn} />} />
         <Route path="/rules" element={<RulesPage />} />
-        <Route path="/admin" element={<AdminPage tournament={tournament} setTournament={setTournament} adminLoggedIn={adminLoggedIn} setAdminLoggedIn={setAdminLoggedIn} />} />
+        <Route path="/admin" element={<AdminPage tournament={tournament} setTournament={setTournament} adminLoggedIn={adminLoggedIn} onLogin={async (email, password) => {
+          if (isSupabaseConfigured) return signIn(email, password);
+          setLocalAdminLoggedIn(true);
+          return null;
+        }} onLogout={async () => {
+          if (isSupabaseConfigured) await signOut();
+          setLocalAdminLoggedIn(false);
+        }} />} />
       </Routes>
 
       <footer className="footer-bar">
@@ -272,7 +287,7 @@ function RulesPage() {
   );
 }
 
-function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn }: { tournament: TournamentData; setTournament: (value: TournamentData | ((current: TournamentData) => TournamentData)) => void; adminLoggedIn: boolean; setAdminLoggedIn: (value: boolean) => void; }) {
+function AdminPage({ tournament, setTournament, adminLoggedIn, onLogin, onLogout }: { tournament: TournamentData; setTournament: (value: TournamentData | ((current: TournamentData) => TournamentData)) => void; adminLoggedIn: boolean; onLogin: (email: string, password: string) => Promise<string | null>; onLogout: () => Promise<void>; }) {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('admin@hyack.example');
   const [password, setPassword] = useState('');
@@ -282,12 +297,11 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   const [selectedMatchId, setSelectedMatchId] = useState(initialMatchId);
   const [gameScores, setGameScores] = useState<Array<{ player1: number | ''; player2: number | '' }>>(formScoresForMatch(initialMatch));
   const [scoreMessage, setScoreMessage] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
 
   const handleLogin = (event: React.FormEvent) => {
     event.preventDefault();
-    if (email && password === 'nimda') {
-      setAdminLoggedIn(true);
-    }
+    void onLogin(email, password).then((error) => setAuthMessage(error ? `Login failed: ${error}` : ''));
   };
 
   const addPlayer = () => {
@@ -335,7 +349,7 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
   };
 
   const logout = () => {
-    setAdminLoggedIn(false);
+    void onLogout();
   };
 
   const selectMatch = (matchId: string) => {
@@ -434,7 +448,8 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
           </label>
           <button type="submit">Login</button>
         </form>
-        <p className="note">Demo mode: any valid email + password works locally. For production, connect Supabase Auth and RLS.</p>
+        {authMessage && <p className="success-message" role="alert">{authMessage}</p>}
+        {!isSupabaseConfigured && <p className="note">Demo mode: any email and password works locally.</p>}
       </main>
     );
   }

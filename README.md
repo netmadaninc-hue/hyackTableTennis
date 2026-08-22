@@ -42,6 +42,8 @@ Copy `.env.example` to `.env` and fill in your Supabase values:
 cp .env.example .env
 ```
 
+For GitHub Pages, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as repository Actions secrets. Apply `supabase/schema.sql` in the Supabase SQL Editor before enabling shared storage.
+
 ## Notes
 
 This project includes a local demo mode and deterministic match logic. For full production use, connect Supabase Auth and RLS as described in the specification.
