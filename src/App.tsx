@@ -315,18 +315,37 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
       return;
     }
 
-    const valid = gameScores.every((game) => (
-      typeof game.player1 === 'number'
-      && typeof game.player2 === 'number'
-      && (validateGameScore(game.player1, game.player2) || validateGameScore(game.player2, game.player1))
-    ));
-    if (!valid) {
-      setScoreMessage('Enter valid scores: first to 11, win by 2.');
+    let p1Wins = 0;
+    let p2Wins = 0;
+    let blankRowSeen = false;
+    let matchAlreadyWon = false;
+    let valid = true;
+    const enteredScores = gameScores.filter((game) => game.player1 !== '' || game.player2 !== '');
+
+    for (const game of gameScores) {
+      const bothBlank = game.player1 === '' && game.player2 === '';
+      if (bothBlank) {
+        blankRowSeen = true;
+        continue;
+      }
+      if (blankRowSeen || matchAlreadyWon || game.player1 === '' || game.player2 === '') {
+        valid = false;
+        break;
+      }
+      if (!validateGameScore(game.player1, game.player2) && !validateGameScore(game.player2, game.player1)) {
+        valid = false;
+        break;
+      }
+      if (game.player1 > game.player2) p1Wins += 1;
+      if (game.player2 > game.player1) p2Wins += 1;
+      if (p1Wins === 2 || p2Wins === 2) matchAlreadyWon = true;
+    }
+
+    if (!valid || (p1Wins !== 2 && p2Wins !== 2)) {
+      setScoreMessage('Enter a valid best-of-3 result. Game 3 is optional after a 2–0 win.');
       return;
     }
 
-    const p1Wins = gameScores.filter((game) => Number(game.player1) > Number(game.player2)).length;
-    const p2Wins = gameScores.filter((game) => Number(game.player2) > Number(game.player1)).length;
     const winnerId = p1Wins > p2Wins ? match.player1Id : match.player2Id;
 
     const nextMatch = tournament.matches
@@ -339,7 +358,7 @@ function AdminPage({ tournament, setTournament, adminLoggedIn, setAdminLoggedIn 
           status: 'Completed',
           winnerId,
           updatedAt: new Date().toISOString(),
-          scores: gameScores.map((game, index) => ({
+          scores: enteredScores.map((game, index) => ({
             matchId: item.id,
             gameNumber: index + 1,
             player1Score: Number(game.player1),
