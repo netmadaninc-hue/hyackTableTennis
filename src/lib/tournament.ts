@@ -78,9 +78,9 @@ export function generateTournament(players: Player[]): TournamentData {
     matches.push(...groupMatches);
   });
 
-  const firstMatches = matches.filter((_, index) => index < groups.length);
-  firstMatches.forEach((match) => {
-    match.status = 'Ready';
+  groups.forEach((group) => {
+    const firstMatch = matches.find((match) => match.groupId === group.id);
+    if (firstMatch) firstMatch.status = 'Ready';
   });
 
   return {

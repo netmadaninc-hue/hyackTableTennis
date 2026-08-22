@@ -56,9 +56,6 @@ function App() {
 }
 
 function LiveDashboard({ tournament }: { tournament: TournamentData }) {
-  const currentMatches = tournament.matches
-    .filter((match) => match.status === 'In Progress' || match.status === 'Ready')
-    .sort((a, b) => (a.tableNumber ?? 99) - (b.tableNumber ?? 99));
   const nextMatches = tournament.matches
     .filter((match) => match.status === 'Upcoming')
     .sort((a, b) => (a.tableNumber ?? 99) - (b.tableNumber ?? 99))
@@ -86,7 +83,10 @@ function LiveDashboard({ tournament }: { tournament: TournamentData }) {
         <h3>🏓 Playing now</h3>
         <div className="table-grid">
           {Array.from({ length: tournament.settings.tables }, (_, index) => {
-            const match = currentMatches[index] ?? tournament.matches.find((item) => item.tableNumber === index + 1 && item.status !== 'Completed');
+            const match = tournament.matches.find((item) => (
+              item.tableNumber === index + 1
+              && (item.status === 'In Progress' || item.status === 'Ready')
+            ));
             const p1 = match?.player1Id ? playerMap.get(match.player1Id) : 'TBD';
             const p2 = match?.player2Id ? playerMap.get(match.player2Id) : 'TBD';
 
