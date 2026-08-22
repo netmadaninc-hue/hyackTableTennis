@@ -163,7 +163,7 @@ function RankingsPage({ tournament }: { tournament: TournamentData }) {
                       <small>P {entry.played} • W {entry.won} • L {entry.lost}</small>
                     </div>
                     <div className="score-mini">
-                      <span>Games won: {entry.gamesWon}</span>
+                      <span>Games won: {entry.gamesWon} • Games lost: {entry.gamesLost}</span>
                       <span>Points: {entry.pointsFor} - {entry.pointsAgainst}</span>
                     </div>
                   </article>

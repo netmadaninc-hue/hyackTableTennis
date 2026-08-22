@@ -111,6 +111,7 @@ describe('tournament logic', () => {
     const standings = computeGroupStandings(matches, players, groups);
     expect(standings.g1[0].playerName).toBe('A');
     expect(standings.g1[0].gamesWon).toBe(2);
+    expect(standings.g1[1].gamesLost).toBe(2);
     expect(standings.g1[0].pointsFor).toBe(22);
     expect(standings.g1[0].pointsAgainst).toBe(16);
   });

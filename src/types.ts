@@ -59,6 +59,7 @@ export interface StandingsEntry {
   won: number;
   lost: number;
   gamesWon: number;
+  gamesLost: number;
   pointsFor: number;
   pointsAgainst: number;
   gameDifference: number;

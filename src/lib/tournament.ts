@@ -119,6 +119,7 @@ export function computeGroupStandings(matches: Match[], players: Player[], group
         won: 0,
         lost: 0,
         gamesWon: 0,
+        gamesLost: 0,
         pointsFor: 0,
         pointsAgainst: 0,
         gameDifference: 0,
@@ -153,12 +154,14 @@ export function computeGroupStandings(matches: Match[], players: Player[], group
           p1.gameDifference += 1;
 
           p2.gamesWon += 0;
+          p2.gamesLost += 1;
           p2.pointsFor += p2Score;
           p2.pointsAgainst += p1Score;
           p2.pointDifference += p2Score - p1Score;
           p2.gameDifference -= 1;
         } else {
           p2.gamesWon += 1;
+          p1.gamesLost += 1;
           p2.pointsFor += p2Score;
           p2.pointsAgainst += p1Score;
           p2.pointDifference += p2Score - p1Score;
@@ -194,6 +197,7 @@ export function calculateStandings(matches: Match[], players: Player[]): Standin
       won: 0,
       lost: 0,
       gamesWon: 0,
+      gamesLost: 0,
       pointsFor: 0,
       pointsAgainst: 0,
       gameDifference: 0,
@@ -228,12 +232,14 @@ export function calculateStandings(matches: Match[], players: Player[]): Standin
         player1.pointsAgainst += p2;
         player1.gameDifference += 1;
         player2.gamesWon += 0;
+        player2.gamesLost += 1;
         player2.pointsFor += p2;
         player2.pointsAgainst += p1;
         player2.gameDifference -= 1;
       }
       if (p2Won) {
         player2.gamesWon += 1;
+        player1.gamesLost += 1;
         player2.pointsFor += p2;
         player2.pointsAgainst += p1;
         player2.gameDifference += 1;
